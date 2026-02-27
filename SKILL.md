@@ -1,6 +1,6 @@
 ---
 name: task-specialist
-version: 1.1.1
+version: 1.1.2
 author: OBODA0
 homepage: https://github.com/OBODA0/task-specialist-skill
 tags: ["task", "management", "sqlite", "workflow", "productivity", "project", "planning", "breakdown", "local", "cli"]
@@ -114,4 +114,8 @@ The DB is auto-located by resolving symlinks back to the real script location. N
 
 - No `eval()`, no external API calls, no crypto
 - Pure SQLite + Bash — passes VirusTotal clean
-- Input sanitized via shell quoting (single-quote escaping)
+- **Integer-only validation** on all task IDs via `require_int()` guard before any SQL use
+- **Status whitelist**: `task list --status` only accepts `pending`, `in_progress`, `blocked`, `done`
+- **Date format enforcement**: `--since` only accepts `YYYY-MM-DD` format via regex check
+- **Text inputs** sanitized via single-quote escaping (`sed "s/'/''/g"`)
+- **Temp-file SQL delivery**: SQL is written to a temp file and fed to sqlite3 via stdin redirect to avoid all argument-injection vectors

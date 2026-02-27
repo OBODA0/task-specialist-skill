@@ -16,21 +16,43 @@ die() { printf '\033[1;31mError:\033[0m %s\n' "$1" >&2; exit 1; }
 ok()  { printf '\033[1;32m✓\033[0m %s\n' "$1"; }
 warn(){ printf '\033[1;33m⚠\033[0m %s\n' "$1"; }
 
-sql() { echo "$1" | sqlite3 -batch "$DB"; }
+# Strict integer-only validation — guards ALL IDs before SQL interpolation
+require_int() {
+  local val="$1"
+  local name="${2:-argument}"
+  [[ "$val" =~ ^[0-9]+$ ]] || die "$name must be a positive integer (got: '$val')"
+}
+
+sql() {
+  local _tmpf
+  _tmpf=$(mktemp)
+  printf '%s\n' "$1" > "$_tmpf"
+  sqlite3 -batch "$DB" < "$_tmpf"
+  local _rc=$?
+  rm -f "$_tmpf"
+  return $_rc
+}
 
 # Formatted table output (with column mode + headers)
 sql_table() {
-  printf '.mode column\n.headers on\n.width %s\n%s\n' "$1" "$2" | sqlite3 -batch "$DB"
+  local _tmpf
+  _tmpf=$(mktemp)
+  printf '.mode column\n.headers on\n.width %s\n%s\n' "$1" "$2" > "$_tmpf"
+  sqlite3 -batch "$DB" < "$_tmpf"
+  local _rc=$?
+  rm -f "$_tmpf"
+  return $_rc
 }
 
 ensure_db() {
   [ -f "$DB" ] || die "Database not found at '$DB'. Run install.sh first."
   
   # v1.1 Schema Migration: Add project column if it doesn't exist
+  # Uses pure SQLite query instead of shell grep to avoid blocking pipe issues
   local has_project
-  has_project=$(sqlite3 "$DB" "PRAGMA table_info(tasks);" | grep -c "|project|" || true)
+  has_project=$(sqlite3 -batch "$DB" "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='project';")
   if [ "$has_project" -eq 0 ]; then
-    sqlite3 "$DB" "ALTER TABLE tasks ADD COLUMN project TEXT;"
+    sqlite3 -batch "$DB" "ALTER TABLE tasks ADD COLUMN project TEXT;"
   fi
 }
 
@@ -76,6 +98,11 @@ cmd_create() {
 
   [ -z "$desc" ] && die "Usage: task create \"description\" [--priority=N] [--parent=ID] [--project=NAME]"
 
+  # Validate parent ID is a positive integer before any SQL use
+  if [ -n "$parent" ]; then
+    require_int "$parent" "--parent"
+  fi
+
   # Inherit priority if parent specified and no explicit priority
   if [ -n "$parent" ] && [ -z "$priority" ]; then
     priority=$(sql "SELECT priority FROM tasks WHERE id = $parent;")
@@ -83,8 +110,9 @@ cmd_create() {
     priority=5
   fi
 
-  # Validate priority is 1-10
-  if ! [[ "$priority" =~ ^[0-9]+$ ]] || [ "$priority" -lt 1 ] || [ "$priority" -gt 10 ]; then
+  # Validate priority is a positive integer between 1-10
+  require_int "$priority" "--priority"
+  if [ "$priority" -lt 1 ] || [ "$priority" -gt 10 ]; then
     die "Priority must be 1-10"
   fi
 
@@ -101,7 +129,7 @@ cmd_create() {
   local project_val="NULL"
   [ -n "$project" ] && project_val="'$(printf '%s' "$project" | sed "s/'/''/g")'"
 
-  # Use parameterized-style quoting to prevent SQL injection
+  # Sanitize text inputs via single-quote escaping
   local safe_desc
   safe_desc=$(printf '%s' "$desc" | sed "s/'/''/g")
 
@@ -117,6 +145,7 @@ cmd_create() {
 cmd_start() {
   local id="${1:-}"
   [ -z "$id" ] && die "Usage: task start ID"
+  require_int "$id" "ID"
 
   # Check task exists
   local status
@@ -148,6 +177,7 @@ cmd_block() {
   local id="${1:-}"
   local reason="${2:-}"
   [ -z "$id" ] && die "Usage: task block ID \"reason\""
+  require_int "$id" "ID"
 
   local status
   status=$(sql "SELECT status FROM tasks WHERE id = $id;" 2>/dev/null) || true
@@ -168,6 +198,7 @@ cmd_block() {
 cmd_complete() {
   local id="${1:-}"
   [ -z "$id" ] && die "Usage: task complete ID"
+  require_int "$id" "ID"
 
   local status
   status=$(sql "SELECT status FROM tasks WHERE id = $id;" 2>/dev/null) || true
@@ -184,6 +215,8 @@ cmd_complete() {
 
   if [ -n "$dependents" ]; then
     while IFS= read -r dep_id; do
+      # dep_id comes from our own DB query — validate defensively anyway
+      require_int "$dep_id" "dep_id"
       local unfinished
       unfinished=$(sql "SELECT count(*) FROM dependencies d
         JOIN tasks t ON t.id = d.depends_on_task_id
@@ -217,8 +250,20 @@ cmd_list() {
   done
 
   local where="WHERE 1=1"
-  [ -n "$filter_status" ] && where="$where AND status = '$filter_status'"
-  [ -n "$filter_parent" ] && where="$where AND parent_id = $filter_parent"
+
+  if [ -n "$filter_status" ]; then
+    # Whitelist: only allow known status values
+    case "$filter_status" in
+      pending|in_progress|blocked|done) ;;
+      *) die "Unknown status: '$filter_status'. Use: pending, in_progress, blocked, done" ;;
+    esac
+    where="$where AND status = '$filter_status'"
+  fi
+
+  if [ -n "$filter_parent" ]; then
+    require_int "$filter_parent" "--parent"
+    where="$where AND parent_id = $filter_parent"
+  fi
   
   if [ -n "$filter_project" ]; then
     local safe_proj
@@ -227,9 +272,9 @@ cmd_list() {
   fi
   
   if [ -n "$filter_since" ]; then
-    local safe_since
-    safe_since=$(printf '%s' "$filter_since" | sed "s/'/''/g")
-    where="$where AND (created_at >= '$safe_since' OR last_updated >= '$safe_since')"
+    # Validate date format YYYY-MM-DD to prevent injection
+    [[ "$filter_since" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "--since must be in YYYY-MM-DD format"
+    where="$where AND (created_at >= '$filter_since' OR last_updated >= '$filter_since')"
   fi
   
   if [ -n "$filter_search" ]; then
@@ -251,14 +296,17 @@ cmd_list() {
 cmd_show() {
   local id="${1:-}"
   [ -z "$id" ] && die "Usage: task show ID"
+  require_int "$id" "ID"
 
   local row
-  row=$(printf '.mode line\n%s\n' "SELECT *,
+  local show_sql="SELECT *,
     CASE
       WHEN started_at IS NULL THEN NULL
       ELSE ROUND((julianday(IFNULL(completed_at, datetime('now'))) - julianday(started_at)) * 24.0, 1) || ' hours'
     END AS duration
-    FROM tasks WHERE id = $id;" | sqlite3 -batch "$DB")
+    FROM tasks WHERE id = $id;"
+  local row
+  row=$(sqlite3 -batch "$DB" ".mode line" "$show_sql")
   [ -z "$row" ] && die "Task #$id not found"
 
   echo "$row"
@@ -306,6 +354,7 @@ cmd_stuck() {
 cmd_break() {
   local parent_id="${1:-}"
   [ -z "$parent_id" ] && die "Usage: task break PARENT_ID \"subtask 1\" \"subtask 2\" ..."
+  require_int "$parent_id" "PARENT_ID"
   shift
 
   [ $# -eq 0 ] && die "Provide at least one subtask description"
@@ -319,6 +368,9 @@ cmd_break() {
   parent_priority=$(sql "SELECT priority FROM tasks WHERE id = $parent_id;")
   parent_project=$(sql "SELECT project FROM tasks WHERE id = $parent_id;")
   
+  # Validate inherited priority before use
+  require_int "$parent_priority" "parent_priority"
+
   local project_val="NULL"
   [ -n "$parent_project" ] && project_val="'$(printf '%s' "$parent_project" | sed "s/'/''/g")'"
 
@@ -334,6 +386,8 @@ cmd_break() {
       VALUES ('$safe_desc', $project_val, 'pending', $parent_priority, $parent_id, datetime('now'), datetime('now'));
       SELECT last_insert_rowid();")
 
+    # Validate the returned auto-generated ID before using it in next SQL
+    require_int "$sub_id" "sub_id"
     [ -z "$first_id" ] && first_id="$sub_id"
 
     # Chain dependency: each subtask depends on the previous one
@@ -352,6 +406,8 @@ cmd_depend() {
   local id="${1:-}"
   local dep="${2:-}"
   [ -z "$id" ] || [ -z "$dep" ] && die "Usage: task depend TASK_ID DEPENDS_ON_ID"
+  require_int "$id" "TASK_ID"
+  require_int "$dep" "DEPENDS_ON_ID"
 
   # Validate both exist
   local c1 c2
@@ -374,6 +430,7 @@ cmd_delete() {
   local id="${1:-}"
   local force=false
   [ -z "$id" ] && die "Usage: task delete ID [--force]"
+  require_int "$id" "ID"
 
   # Check for --force flag
   if [ "${2:-}" = "--force" ]; then
