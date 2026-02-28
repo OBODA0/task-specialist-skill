@@ -13,6 +13,13 @@ die() { printf '\033[1;31mError:\033[0m %s\n' "$1" >&2; exit 1; }
 ok()  { printf '\033[1;32m✓\033[0m %s\n' "$1"; }
 warn(){ printf '\033[1;33m⚠\033[0m %s\n' "$1"; }
 
+# Strict integer-only validation — guards ALL IDs before SQL interpolation
+require_int() {
+  local val="$1"
+  local name="${2:-argument}"
+  [[ "$val" =~ ^[0-9]+$ ]] || die "$name must be a positive integer (got: '$val')"
+}
+
 sql() { echo "$1" | sqlite3 -batch "$DB"; }
 
 [ -f "$DB" ] || die "Database not found at '$DB'. Run install.sh first."
@@ -21,6 +28,7 @@ sql() { echo "$1" | sqlite3 -batch "$DB"; }
 
 if [ $# -ge 1 ]; then
   TASK_ID="$1"
+  require_int "$TASK_ID" "TASK_ID"
 
   # Validate task exists and is in_progress
   local_status=$(sql "SELECT status FROM tasks WHERE id = $TASK_ID;" 2>/dev/null) || true
