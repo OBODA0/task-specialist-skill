@@ -13,6 +13,11 @@ ok()  { printf '\033[1;32m✓\033[0m %s\n' "$1"; }
 die() { printf '\033[1;31mError:\033[0m %s\n' "$1" >&2; exit 1; }
 info(){ printf '\033[1;34mℹ\033[0m %s\n' "$1"; }
 
+CREATE_SYMLINKS=false
+if [ "${1:-}" = "--symlink" ]; then
+  CREATE_SYMLINKS=true
+fi
+
 # ── 1. Check sqlite3 ────────────────────────────────────────────────────────
 
 if ! command -v sqlite3 &>/dev/null; then
@@ -70,16 +75,22 @@ ok "Scripts marked executable"
 
 # ── 4. Symlink to ~/.local/bin (optional) ────────────────────────────────────
 
-mkdir -p "$BIN_DIR"
+if [ "$CREATE_SYMLINKS" = true ]; then
+  mkdir -p "$BIN_DIR"
+  ln -sf "$SCRIPT_DIR/scripts/task.sh" "$BIN_DIR/task"
+  ln -sf "$SCRIPT_DIR/scripts/task-heartbeat.sh" "$BIN_DIR/task-heartbeat"
+  ok "Symlinks created in $BIN_DIR"
 
-ln -sf "$SCRIPT_DIR/scripts/task.sh" "$BIN_DIR/task"
-ln -sf "$SCRIPT_DIR/scripts/task-heartbeat.sh" "$BIN_DIR/task-heartbeat"
-ok "Symlinks created in $BIN_DIR"
-
-# Check if ~/.local/bin is in PATH
-if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-  info "Add $BIN_DIR to your PATH if not already present:"
-  echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  # Check if ~/.local/bin is in PATH
+  if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+    info "Add $BIN_DIR to your PATH if not already present:"
+    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  fi
+else
+  info "Skipped symlinking to $BIN_DIR (run 'bash install.sh --symlink' to create them automatically)."
+  info "You can use the commands directly:"
+  echo "  $SCRIPT_DIR/scripts/task.sh"
+  echo "  $SCRIPT_DIR/scripts/task-heartbeat.sh"
 fi
 
 # ── Done ─────────────────────────────────────────────────────────────────────
@@ -88,8 +99,13 @@ echo ""
 ok "Task-Specialist installed successfully!"
 echo ""
 echo "Quick start:"
-echo "  task create \"My first task\" --priority=8"
-echo "  task list"
-echo "  task start 1"
-echo "  task-heartbeat 1"
-echo "  task stuck"
+if [ "$CREATE_SYMLINKS" = true ]; then
+  echo "  task create \"My first task\" --priority=8"
+  echo "  task list"
+  echo "  task start 1"
+  echo "  task-heartbeat 1"
+else
+  echo "  $SCRIPT_DIR/scripts/task.sh create \"My first task\" --priority=8"
+  echo "  $SCRIPT_DIR/scripts/task.sh list"
+  echo "  $SCRIPT_DIR/scripts/task.sh start 1"
+fi

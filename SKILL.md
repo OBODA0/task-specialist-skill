@@ -1,6 +1,6 @@
 ---
 name: task-specialist
-version: 1.1.4
+version: 1.1.5
 author: OBODA0
 homepage: https://github.com/OBODA0/task-specialist-skill
 tags: ["task", "management", "sqlite", "workflow", "productivity", "project", "planning", "breakdown", "local", "cli"]
@@ -15,8 +15,11 @@ description: "A robust, local SQLite-backed task management system designed to e
 ## Quick Start
 
 ```bash
-# Install (creates DB, symlinks to ~/.local/bin)
+# Install (creates DB only, no PATH changes)
 bash install.sh
+
+# Or install AND create easy CLI symlinks in ~/.local/bin
+bash install.sh --symlink
 
 # Create and work tasks
 task create "Build auth module" --priority=8
