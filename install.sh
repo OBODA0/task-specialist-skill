@@ -6,7 +6,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DB="${TASK_DB:-$SCRIPT_DIR/tasks.db}"
 BIN_DIR="${HOME}/.local/bin"
 
 ok()  { printf '\033[1;32m✓\033[0m %s\n' "$1"; }
@@ -29,8 +28,9 @@ fi
 
 ok "sqlite3 found: $(sqlite3 --version | head -1)"
 
-# ── 2. Create database with schema ──────────────────────────────────────────
+# ── 2. Create seed database with schema (for testing) ───────────────────────
 
+DB="$PWD/.tasks.db"
 if [ -f "$DB" ]; then
   info "Database already exists at $DB — skipping creation."
 else

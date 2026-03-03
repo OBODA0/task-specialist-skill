@@ -8,16 +8,41 @@ cmd_complete() {
   [ -z "$status" ] && die "Task #$id not found"
   [ "$status" = "done" ] && die "Task #$id is already complete"
 
-  local blocking
-  blocking=$(sql "SELECT id || ': ' || request_text FROM tasks WHERE parent_id = $id AND status != 'done';")
-  if [ -n "$blocking" ]; then
+  # Safety: Cannot complete parent if subtasks are pending
+  local blocking_subs
+  blocking_subs=$(sql "SELECT id || ': ' || request_text FROM tasks WHERE parent_id = $id AND status != 'done';")
+  if [ -n "$blocking_subs" ]; then
     warn "Cannot complete task #$id — pending subtasks:"
-    echo "$blocking" | while IFS= read -r line; do
+    echo "$blocking_subs" | while IFS= read -r line; do
       printf '  → %s\n' "$line"
     done
     exit 1
   fi
 
-  sql "UPDATE tasks SET status = 'done', completed_at = datetime('now'), last_updated = datetime('now') WHERE id = $id;"
+  sql "UPDATE tasks SET status = 'done', completed_at = datetime('now'), last_updated = datetime('now'), started_at = COALESCE(started_at, datetime('now')) WHERE id = $id;"
   ok "Completed task #$id"
+
+  # Auto-unblock dependents
+  local dependents
+  dependents=$(sql "SELECT DISTINCT d.task_id FROM dependencies d
+    WHERE d.depends_on_task_id = $id;")
+  
+  if [ -n "$dependents" ]; then
+    while IFS= read -r dep_id; do
+      require_int "$dep_id" "dep_id"
+      local unfinished
+      unfinished=$(sql "SELECT count(*) FROM dependencies d
+        JOIN tasks t ON t.id = d.depends_on_task_id
+        WHERE d.task_id = $dep_id AND t.status != 'done';")
+      
+      if [ "$unfinished" -eq 0 ]; then
+        local dep_status
+        dep_status=$(sql "SELECT status FROM tasks WHERE id = $dep_id;")
+        if [ "$dep_status" = "blocked" ]; then
+          sql "UPDATE tasks SET status = 'pending', last_updated = datetime('now') WHERE id = $dep_id;"
+          ok "Auto-unblocked task #$dep_id (all dependencies satisfied)"
+        fi
+      fi
+    done <<< "$dependents"
+  fi
 }

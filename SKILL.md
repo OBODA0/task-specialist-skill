@@ -1,6 +1,6 @@
 ---
 name: task-specialist
-version: 1.1.5
+version: 1.2.1
 author: OBODA0
 homepage: https://github.com/OBODA0/task-specialist-skill
 tags: ["task", "management", "sqlite", "workflow", "productivity", "project", "planning", "breakdown", "local", "cli"]
@@ -111,9 +111,9 @@ dependencies: task_id, depends_on_task_id (composite PK)
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TASK_DB` | Auto-detected (next to script) | Path to SQLite database |
+| `TASK_DB` | `$PWD/.tasks.db` | Path to SQLite database |
 
-The DB is auto-located by resolving symlinks back to the real script location. No configuration needed if you used `install.sh`.
+The DB defaults to a hidden `.tasks.db` file in the **current working directory** where the command is executed. This natively supports separate task lists for different projects/workspaces without data collision.
 
 ## Security
 
