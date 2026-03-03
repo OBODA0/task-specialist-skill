@@ -41,6 +41,7 @@ When using the `task-specialist` CLI, follow these principles to ensure high-qua
 
 ```bash
 task create "description" [--priority=N] [--parent=ID] [--project=NAME]  # → prints task ID
+task edit    ID [--desc="new text"] [--priority=N] [--project=NAME]      # adjust task details
 task start   ID                                          # pending → in_progress
 task block   ID "reason"                                 # → blocked (reason in notes)
 task complete ID                                         # → done + auto-unblocks dependents
@@ -57,7 +58,8 @@ task delete  ID [--force]                                # remove task (--force 
 
 ```bash
 task list [--status=S] [--parent=ID] [--project=N] [--since=YYYY-MM-DD] [--search="regex"]
-task show ID                                # full detail, duration, deps + subtasks
+task export [--status=STATUS] [--project=NAME]                           # generates markdown table
+task show ID                                                             # full details & deps
 task stuck                                  # in_progress tasks inactive >30min
 ```
 
