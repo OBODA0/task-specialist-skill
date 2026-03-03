@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2
+### Fixed
+- **Consistency**: Aligned `task-heartbeat.sh` default database path with the main `task` CLI (`$PWD/.tasks.db`). This resolves the "Suspicious" mismatch flag on ClawHub and ensures heartbeats correctly target the local workspace.
+
 ## 1.2.1
 ### Fixed
 - **CRITICAL**: Fixed a data loss bug where `tasks.db` could be wiped during ClawHub `--force` updates.

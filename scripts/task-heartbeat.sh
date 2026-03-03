@@ -7,7 +7,7 @@ set -euo pipefail
 
 _REAL_SCRIPT="$(readlink -f "$0")"
 _SCRIPT_DIR="$(dirname "$_REAL_SCRIPT")"
-DB="${TASK_DB:-$(dirname "$_SCRIPT_DIR")/tasks.db}"
+DB="${TASK_DB:-$PWD/.tasks.db}"
 
 die() { printf '\033[1;31mError:\033[0m %s\n' "$1" >&2; exit 1; }
 ok()  { printf '\033[1;32m✓\033[0m %s\n' "$1"; }
@@ -22,7 +22,9 @@ require_int() {
 
 sql() { echo "$1" | sqlite3 -batch "$DB"; }
 
-[ -f "$DB" ] || die "Database not found at '$DB'. Run install.sh first."
+# Note: schema initialization is handled by task.sh, but we allow its existence here.
+# If DB is missing, subsequent SQL calls will correctly fail or create an empty file.
+# We remove the immediate 'die' to be consistent with workspace auto-init.
 
 # ── Mode 1: Heartbeat a specific task ────────────────────────────────────────
 

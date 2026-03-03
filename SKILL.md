@@ -1,6 +1,6 @@
 ---
 name: task-specialist
-version: 1.2.1
+version: 1.2.2
 author: OBODA0
 homepage: https://github.com/OBODA0/task-specialist-skill
 tags: ["task", "management", "sqlite", "workflow", "productivity", "project", "planning", "breakdown", "local", "cli"]
