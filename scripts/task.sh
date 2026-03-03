@@ -42,11 +42,13 @@ cat <<'EOF'
 task — local task management
 USAGE:
   task create "description" [--priority=N] [--parent=ID] [--project=NAME]
+  task edit    ID [--desc="new text"] [--priority=N] [--project=NAME]
   task start   ID
   task block   ID "reason"
   task complete ID
   task list    [--status=STATUS] [--parent=ID] [--project=NAME]
   task show    ID
+  task export  [--status=STATUS] [--project=NAME]
   task stuck
   task break   ID "subtask 1" "subtask 2" ...
   task delete  ID [--force]
@@ -346,15 +348,114 @@ cmd_delete() {
   ok "Deleted task #$id: $desc"
 }
 [ $# -eq 0 ] && usage
+cmd_edit() {
+  local id="${1:-}"
+  local desc="" priority="" project=""
+  shift
+
+  [ -z "$id" ] && die "Usage: task edit ID [--desc=\"new text\"] [--priority=N] [--project=NAME]"
+  require_int "$id" "ID"
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --desc=*)     desc="${1#*=}" ;;
+      --priority=*) priority="${1#*=}" ;;
+      --project=*)  project="${1#*=}" ;;
+      -*)           die "Unknown flag: $1" ;;
+    esac
+    shift
+  done
+
+  [ -z "$desc" ] && [ -z "$priority" ] && [ -z "$project" ] && die "Nothing to edit. Provide --desc, --priority, or --project."
+
+  local status
+  status=$(sql "SELECT status FROM tasks WHERE id = $id;" 2>/dev/null) || true
+  [ -z "$status" ] && die "Task #$id not found"
+
+  local updates=""
+
+  if [ -n "$desc" ]; then
+    local safe_desc
+    safe_desc=$(printf '%s' "$desc" | sed "s/'/''/g")
+    updates="request_text = '$safe_desc'"
+  fi
+
+  if [ -n "$priority" ]; then
+    require_int "$priority" "--priority"
+    if [ "$priority" -lt 1 ] || [ "$priority" -gt 10 ]; then
+      die "Priority must be 1-10"
+    fi
+    [ -n "$updates" ] && updates="$updates, "
+    updates="${updates}priority = $priority"
+  fi
+
+  if [ -n "$project" ]; then
+    local safe_proj
+    safe_proj=$(printf '%s' "$project" | sed "s/'/''/g")
+    [ -n "$updates" ] && updates="$updates, "
+    if [ "$project" = "none" ] || [ "$project" = "null" ] || [ "$project" = "NULL" ]; then
+        updates="${updates}project = NULL"
+    else
+        updates="${updates}project = '$safe_proj'"
+    fi
+  fi
+
+  sql "UPDATE tasks SET $updates, last_updated = datetime('now') WHERE id = $id;"
+  ok "Updated task #$id"
+}
+
+cmd_export() {
+  local filter_status="" filter_project=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --status=*)  filter_status="${1#*=}" ;;
+      --project=*) filter_project="${1#*=}" ;;
+      -*)          die "Unknown flag: $1" ;;
+    esac
+    shift
+  done
+
+  local where="WHERE 1=1"
+
+  if [ -n "$filter_status" ]; then
+    case "$filter_status" in
+      pending|in_progress|blocked|done) ;;
+      *) die "Unknown status: '$filter_status'. Use: pending, in_progress, blocked, done" ;;
+    esac
+    where="$where AND status = '$filter_status'"
+  fi
+
+  if [ -n "$filter_project" ]; then
+    local safe_proj
+    safe_proj=$(printf '%s' "$filter_project" | sed "s/'/''/g")
+    where="$where AND project = '$safe_proj'"
+  fi
+
+  # Use raw sqlite3 output, format with awk to build Github markdown table
+  local raw_data
+  raw_data=$(sqlite3 -batch "$DB" "SELECT id, IFNULL(project, '-'), status, priority, request_text FROM tasks $where ORDER BY priority DESC, created_at ASC;")
+
+  if [ -z "$raw_data" ]; then
+    echo "No tasks found to export."
+    exit 0
+  fi
+
+  echo "| ID | Project | Status | Priority | Description |"
+  echo "|---|---|---|---|---|"
+  echo "$raw_data" | awk -F '|' '{ printf "| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5 }'
+}
 ensure_db
 case "$1" in
   create)   shift; cmd_create "$@" ;;
+  edit)     shift; cmd_edit "$@" ;;
   start)    shift; cmd_start "$@" ;;
   block)    shift; cmd_block "$@" ;;
   complete) shift; cmd_complete "$@" ;;
   delete)   shift; cmd_delete "$@" ;;
   list)     shift; cmd_list "$@" ;;
   show)     shift; cmd_show "$@" ;;
+  export)   shift; cmd_export "$@" ;;
   stuck)    shift; cmd_stuck "$@" ;;
   break)    shift; cmd_break "$@" ;;
   depend)   shift; cmd_depend "$@" ;;
