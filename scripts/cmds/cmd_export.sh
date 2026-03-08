@@ -1,10 +1,11 @@
 cmd_export() {
-  local filter_status="" filter_project=""
+  local filter_status="" filter_project="" format_json=0
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --status=*)  filter_status="${1#*=}" ;;
       --project=*) filter_project="${1#*=}" ;;
+      --json)      format_json=1 ;;
       -*)          die "Unknown flag: $1" ;;
     esac
     shift
@@ -26,16 +27,22 @@ cmd_export() {
     where="$where AND project = '$safe_proj'"
   fi
 
-  # Use raw sqlite3 output, format with awk to build Github markdown table
+  if [ "$format_json" -eq 1 ]; then
+    # Completely dump SQLite natively as a valid JSON array
+    sqlite3 -batch "$DB" ".mode json" "SELECT * FROM tasks $where ORDER BY priority DESC, created_at ASC;"
+    exit 0
+  fi
+
+  # Default: Use raw sqlite3 output, format with awk to build Github markdown table
   local raw_data
-  raw_data=$(sqlite3 -batch "$DB" "SELECT id, IFNULL(project, '-'), status, priority, request_text FROM tasks $where ORDER BY priority DESC, created_at ASC;")
+  raw_data=$(sqlite3 -batch "$DB" "SELECT id, IFNULL(project, '-'), status, priority, IFNULL(assignee, '-'), request_text FROM tasks $where ORDER BY priority DESC, created_at ASC;")
 
   if [ -z "$raw_data" ]; then
     echo "No tasks found to export."
     exit 0
   fi
 
-  echo "| ID | Project | Status | Priority | Description |"
-  echo "|---|---|---|---|---|"
-  echo "$raw_data" | awk -F '|' '{ printf "| %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5 }'
+  echo "| ID | Project | Status | Priority | Assignee | Description |"
+  echo "|---|---|---|---|---|---|"
+  echo "$raw_data" | awk -F '|' '{ printf "| %s | %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5, $6 }'
 }

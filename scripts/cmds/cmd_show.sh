@@ -12,6 +12,8 @@ cmd_show() {
     'Description: ' || request_text || char(10) ||
     'Project:     ' || IFNULL(project, 'none') || char(10) ||
     'Status:      ' || status || char(10) ||
+    'Assignee:    ' || IFNULL(assignee, 'none') || char(10) ||
+    'Verify Cmd:  ' || IFNULL(verification_cmd, 'none') || char(10) ||
     'Priority:    ' || priority || char(10) ||
     'Parent ID:   ' || IFNULL(parent_id, 'none') || char(10) ||
     'Created:     ' || created_at || char(10) ||

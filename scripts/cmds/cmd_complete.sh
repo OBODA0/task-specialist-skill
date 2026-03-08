@@ -19,6 +19,17 @@ cmd_complete() {
     exit 1
   fi
 
+  local verify_cmd
+  verify_cmd=$(sql "SELECT verification_cmd FROM tasks WHERE id = $id;" 2>/dev/null) || true
+  
+  if [ -n "$verify_cmd" ]; then
+    printf '\033[1;33mRunning checkpoint verification:\033[0m %s\n' "$verify_cmd"
+    if ! bash -c "$verify_cmd"; then
+      die "Verification failed! Task #$id cannot be completed until the Checkpoint passes."
+    fi
+    ok "Checkpoint passed."
+  fi
+
   sql "UPDATE tasks SET status = 'done', completed_at = datetime('now'), last_updated = datetime('now'), started_at = COALESCE(started_at, datetime('now')) WHERE id = $id;"
   ok "Completed task #$id"
 

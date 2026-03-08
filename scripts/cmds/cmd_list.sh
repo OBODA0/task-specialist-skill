@@ -1,11 +1,12 @@
 cmd_list() {
-  local filter_status="" filter_parent="" filter_project=""
+  local filter_status="" filter_parent="" filter_project="" format_chat=0
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --status=*)  filter_status="${1#*=}" ;;
       --parent=*)  filter_parent="${1#*=}" ;;
       --project=*) filter_project="${1#*=}" ;;
+      --format=chat) format_chat=1 ;;
       -*)          die "Unknown flag: $1" ;;
     esac
     shift
@@ -32,6 +33,33 @@ cmd_list() {
     where="$where AND project = '$safe_proj'"
   fi
 
+  if [ "$format_chat" -eq 1 ]; then
+    # Bypass ASCII tables and construct pure GitHub Markdown
+    local list_data
+    list_data=$(sqlite3 -batch "$DB" "
+    SELECT 
+      CASE WHEN status = 'done' THEN '- [x] '
+           WHEN status = 'in_progress' THEN '- [/] '
+           WHEN status = 'blocked' THEN '- [!] '
+           ELSE '- [ ] ' END ||
+      '**#' || id || ': ' || request_text || '** ' ||
+      '(Priority: ' || priority || ')' ||
+      CASE WHEN project IS NOT NULL THEN ' [' || project || ']' ELSE '' END ||
+      CASE WHEN assignee IS NOT NULL THEN ' (@' || assignee || ')' ELSE '' END
+    FROM tasks
+    $where
+    ORDER BY status = 'done', priority DESC, created_at ASC;
+    ")
+    
+    if [ -z "$list_data" ]; then
+      echo "_No tasks found matching criteria._"
+    else
+      echo "$list_data"
+    fi
+    exit 0
+  fi
+
+  # Default ASCII table mode
   local q="
   SELECT
     id,
@@ -43,11 +71,12 @@ cmd_list() {
     END || substr(request_text, 1, 50) AS task,
     status,
     priority,
-    IFNULL(project, '-') AS project
+    IFNULL(project, '-') AS project,
+    IFNULL(assignee, '-') AS assignee
   FROM tasks
   $where
   ORDER BY status = 'done', priority DESC, created_at ASC;
   "
 
-  sql_table "4 54 12 8 15" "$q"
+  sql_table "4 54 12 8 15 15" "$q"
 }

@@ -1,18 +1,19 @@
 cmd_create() {
-  local desc="" priority="" parent="" project=""
+  local desc="" priority="" parent="" project="" verify=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --priority=*) priority="${1#*=}" ;;
       --parent=*)   parent="${1#*=}" ;;
       --project=*)  project="${1#*=}" ;;
+      --verify=*)   verify="${1#*=}" ;;
       -*)           die "Unknown flag: $1" ;;
       *)            desc="$1" ;;
     esac
     shift
   done
 
-  [ -z "$desc" ] && die "Usage: task create \"description\" [--priority=N] [--parent=ID] [--project=NAME]"
+  [ -z "$desc" ] && die "Usage: task create \"description\" [--priority=N] [--parent=ID] [--project=NAME] [--verify=\"cmd\"]"
 
   if [ -n "$parent" ]; then
     require_int "$parent" "--parent"
@@ -44,9 +45,12 @@ cmd_create() {
   local safe_desc
   safe_desc=$(printf '%s' "$desc" | sed "s/'/''/g")
 
+  local verify_val="NULL"
+  [ -n "$verify" ] && verify_val="'$(printf '%s' "$verify" | sed "s/'/''/g")'"
+
   local task_id
-  task_id=$(sql "INSERT INTO tasks (request_text, project, status, priority, parent_id, created_at, last_updated)
-    VALUES ('$safe_desc', $project_val, 'pending', $priority, $parent_val, datetime('now'), datetime('now'));
+  task_id=$(sql "INSERT INTO tasks (request_text, project, status, priority, parent_id, verification_cmd, created_at, last_updated)
+    VALUES ('$safe_desc', $project_val, 'pending', $priority, $parent_val, $verify_val, datetime('now'), datetime('now'));
     SELECT last_insert_rowid();")
 
   ok "Created task #$task_id: $desc (priority=$priority${project:+, project=$project})"

@@ -48,7 +48,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   started_at   TEXT,
   completed_at TEXT,
   last_updated TEXT    NOT NULL,
-  notes        TEXT
+  notes        TEXT,
+  verification_cmd TEXT,
+  assignee     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS dependencies (

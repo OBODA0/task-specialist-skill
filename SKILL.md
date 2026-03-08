@@ -1,6 +1,6 @@
 ---
 name: task-specialist
-version: 1.2.2
+version: 2.0.0
 author: OBODA0
 homepage: https://github.com/OBODA0/task-specialist-skill
 tags: ["task", "management", "sqlite", "workflow", "productivity", "project", "planning", "breakdown", "local", "cli"]
@@ -35,16 +35,54 @@ When using the `task-specialist` CLI, follow these principles to ensure high-qua
 - **Status Transparency**: Keep task statuses (`start`, `block`, `complete`) updated in real-time so your progress is traceable and accurate.
 - **Dependency Management**: Use `task depend` to link tasks that rely on each other, preventing illogical execution order.
 - **Document Progress**: Use the `--notes` or `task show` output to keep track of critical information as you move through a project.
+- **Multi-Agent Swarm Queue**: If executing in parallel alongside other agents, **NEVER** pick tasks blindly from `task list` (this causes severe race conditions). **ALWAYS** run `task claim --agent="<YourName>"`. This executes an atomic SQL lock to fetch the highest-priority, fully unblocked pending task exclusively for you and paints your node's identifier onto the global Kanban board.
+- **Context Persistence**: Use `task note <Next_Task_ID> "Your specific context string"` to permanently pass vital URLs, DB strings, or error codes to downstream agents before you close your current task.
+- **Verification Checkpoints**: If a task has a `--verify="cmd"` bound to it, running `task complete <ID>` will automatically execute the Bash subshell checkpoint. **If the checkpoint fails, the completion is rejected.**
+
+## Swarm Orchestrator Guide
+
+If you are the **Primary Agent (Orchestrator)** managing a complex project, `task-specialist` is designed to help you spawn parallel Subagents to execute decoupled work simultaneously. 
+
+1. **When to Spawn Subagents**: Use the Swarm for horizontally scalable logic (e.g., "Write isolated unit tests for 10 different files", or "Simultaneously deploy 3 independent Docker containers"). Do not spawn subagents for highly linear, sequential work.
+2. **Decomposing the Board**: 
+   - First, create all the parallel objectives using `task create`.
+   - Create a final integration task (e.g., "Merge services") and link it to the subtasks using `task depend`. This automatically blocks the final task until all Subagents finish.
+   - Use `task edit <ID> --notes="..."` to inject deep context (URLs, file paths, API keys) directly into the task payload.
+3. **Spawning the Subagents**: Use your native OpenClaw `sessions_spawn` tool to horizontally scale. Set `mode: "run"` for one-shot parallel workers. Pass them the strict execution prompt in the `task` parameter:
+   ```json
+   {
+     "tool": "sessions_spawn",
+     "runtime": "subagent",
+     "mode": "run",
+     "label": "worker-alpha",
+     "task": "You are a Swarm Worker utilizing the `task-specialist` skill. The task payload DB is at $PWD/.tasks.db. (Read SKILL.md for CLI syntax if needed).\n1. Run `task claim --agent=\"worker-alpha\"` to atomically pop the queue.\n2. Read your target objective via `task show <ID>`.\n3. Execute the objective. Record vital context for me via `task note <ID> \"msg\"`.\n4. Run `task complete <ID>` and self-terminate."
+   }
+   ```
+4. **Monitoring the Swarm**: While your `mode: "run"` Subagents are executing asynchronously:
+   - Run `task board` periodically to monitor their live Kanban progress through the SQLite matrix.
+   - Run `task stuck` to catch any agents that have timed out and require termination (`subagents(action=\"kill\")`) and queue restart.
+
+## Swarm Subagent Guide
+
+If you are a freshly spawned **Subagent Worker**, your sole purpose is to execute pending tasks in the queue without colliding with other parallel agents. 
+
+1. **Acquiring Work**: **NEVER** pick tasks blindly from `task list`. **ALWAYS** run `task claim --agent=\"<YourName>\"`. This natively executes an atomic SQL lock to guarantee you aren't fighting another agent for the same process.
+2. **Context Intake**: Once you have acquired a task (e.g., Task #5), run `task show 5`. Read the `Notes:` section! Your Orchestrator or previous subagents may have left you precise URLs, API tokens, or parameters there.
+3. **Context Persistence**: When your work is done, ask yourself: *"Does the next downstream agent need to know I did this?"* If yes, use `task note <Next_Task_ID> \"Your context string here\"` to permanently append that knowledge to the downstream task's envelope.
+4. **Completion and Checkpoints**: Run `task complete <ID>`. If your task contains a Checkpoint Validation (a Bash subshell script), the engine will automatically execute it. **If the checkpoint fails, the completion is rejected.** You must repair the codebase until the tests pass before you can technically complete the task and self-terminate.
+
 ## CLI Reference
 
 ### Task Lifecycle
 
 ```bash
-task create "description" [--priority=N] [--parent=ID] [--project=NAME]  # → prints task ID
-task edit    ID [--desc="new text"] [--priority=N] [--project=NAME]      # adjust task details
-task start   ID                                          # pending → in_progress
+task create "description" [--priority=N] [--parent=ID] [--project=NAME] [--verify="cmd"]  # → prints task ID
+task edit    ID [--desc="new text"] [--priority=N] [--project=NAME] [--verify="cmd"]      # adjust details
+task claim   [--agent="NAME"]                            # atomically lock & claim highest priority pending task
+task start   ID                                          # pending → in_progress (prefer 'claim' for swarm)
 task block   ID "reason"                                 # → blocked (reason in notes)
-task complete ID                                         # → done + auto-unblocks dependents
+task note    ID "message"                                # append runtime logic or error context to the task
+task complete ID                                         # → done. If verification_cmd fails, completion is BLOCKED.
 task delete  ID [--force]                                # remove task (--force for parents)
 ```
 
@@ -54,13 +92,14 @@ task delete  ID [--force]                                # remove task (--force 
 
 **Delete:** Refuses if task has subtasks unless `--force` is passed, which cascades the delete to all children and their dependencies.
 
-### Querying
+### Querying & Observability
 
 ```bash
-task list [--status=S] [--parent=ID] [--project=N] [--since=YYYY-MM-DD] [--search="regex"]
-task export [--status=STATUS] [--project=NAME]                           # generates markdown table
-task show ID                                                             # full details & deps
-task stuck                                  # in_progress tasks inactive >30min
+task board                                                               # renders visual ASCII Kanban dashboard
+task list [--status=S] [--parent=ID] [--project=N] [--format=chat]       # tabular lists or github markdown
+task export [--status=STATUS] [--project=NAME] [--json]                  # markdown table or raw JSON array hook
+task show ID                                                             # full details, assignee, & deps
+task stuck                                                               # in_progress tasks inactive >30min
 ```
 
 ### Subtask Decomposition
@@ -102,7 +141,7 @@ done
 
 ```sql
 tasks: id, request_text, project, status, priority, parent_id,
-       created_at, started_at, completed_at, last_updated, notes
+       created_at, started_at, completed_at, last_updated, notes, verification_cmd, assignee
 
 dependencies: task_id, depends_on_task_id (composite PK)
 ```
