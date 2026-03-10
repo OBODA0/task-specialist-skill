@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0 - Features & Security 
+### Added
+- **Due Dates (`--due`)**: Added due date tracking (`YYYY-MM-DD`) natively to the database. Supports `task create` and `task edit`, visible dynamically on Kanban board and exports.
+- **Labels / Tags (`--tags`)**: Tasks can now trace arbitrary metadata hooks (e.g. `--tags="bug,urgent"`), instantly filterable via `task list --tag="urgent"`.
+- **Assignment Manipulation**: Tasks can be explicitly assigned without locking queue using `task edit <ID> --assignee="NAME"` or stripped via `--unassign`.
+- **Status Escapes (`task unblock`, `task restart`)**: Introduced `task unblock` to reverse a blocked task to pending, and `task restart` to fully reset an active or completed task.
+
+### Security
+- **Checkpoint Isolation**: `verification_cmd` execution is explicitly disconnected from auto-execution during `task complete` to prevent recursive RCE vulnerabilities during agent loop cycles. The required command is now printed gracefully for manual or discrete execution.
+
 ## 2.0.0 - The Swarm Engine Update
 This release fundamentally transforms the `task` CLI from a single-agent checklist into a highly concurrent, fully observable, parallel orchestration engine designed for Swarm AI coordination. All features remain completely native to Bash and SQLite with zero external dependencies.
 

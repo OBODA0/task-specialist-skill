@@ -51,8 +51,8 @@ fi
 
 # ── Mode 2: Report stalled tasks (no args) ───────────────────────────────────
 
-stalled=$(printf '.mode column\n.headers on\n.width 4 40 15 20\n%s\n' \
-  "SELECT id, request_text AS description, IFNULL(assignee, '-') AS assignee, last_updated FROM tasks WHERE status = 'in_progress' AND last_updated < datetime('now', '-30 minutes') ORDER BY last_updated ASC;" \
+stalled=$(printf '.mode column\n.headers on\n.width 4 40 15 10 15 20\n%s\n' \
+  "SELECT id, request_text AS description, IFNULL(assignee, '-') AS assignee, IFNULL(due_date, '-') AS due_date, IFNULL(tags, '-') AS tags, last_updated FROM tasks WHERE status = 'in_progress' AND last_updated < datetime('now', '-30 minutes') ORDER BY last_updated ASC;" \
   | sqlite3 -batch "$DB")
 
 if [ -z "$stalled" ]; then

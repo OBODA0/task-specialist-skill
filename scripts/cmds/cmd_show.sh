@@ -8,19 +8,21 @@ cmd_show() {
   [ "$exists" -eq 0 ] && die "Task #$id not found"
 
   echo "── Task #$id ───────────────────────────────────"
-  sql "SELECT
-    'Description: ' || request_text || char(10) ||
-    'Project:     ' || IFNULL(project, 'none') || char(10) ||
-    'Status:      ' || status || char(10) ||
-    'Assignee:    ' || IFNULL(assignee, 'none') || char(10) ||
-    'Verify Cmd:  ' || IFNULL(verification_cmd, 'none') || char(10) ||
-    'Priority:    ' || priority || char(10) ||
-    'Parent ID:   ' || IFNULL(parent_id, 'none') || char(10) ||
-    'Created:     ' || created_at || char(10) ||
-    'Started:     ' || IFNULL(started_at, '-') || char(10) ||
-    'Completed:   ' || IFNULL(completed_at, '-') || char(10) ||
-    'Updated:     ' || last_updated
-    FROM tasks WHERE id = $id;"
+  sqlite3 -batch "$DB" "SELECT
+      'Task:        ' || '[\033[1;36m' || id || '\033[0m] ' || request_text || char(10) ||
+      'Status:      ' || status || char(10) ||
+      'Project:     ' || IFNULL(project, 'none') || char(10) ||
+      'Assignee:    ' || IFNULL(assignee, 'none') || char(10) ||
+      'Due Date:    ' || IFNULL(due_date, 'none') || char(10) ||
+      'Tags:        ' || IFNULL(tags, 'none') || char(10) ||
+      'Verify Cmd:  ' || IFNULL(verification_cmd, 'none') || char(10) ||
+      'Priority:    ' || priority || char(10) ||
+      'Parent ID:   ' || IFNULL(parent_id, 'none') || char(10) ||
+      'Created:     ' || created_at || char(10) ||
+      'Started:     ' || IFNULL(started_at, '-') || char(10) ||
+      'Completed:   ' || IFNULL(completed_at, '-') || char(10) ||
+      'Updated:     ' || last_updated
+      FROM tasks WHERE id = $id;"
 
   local notes
   notes=$(sql "SELECT notes FROM tasks WHERE id = $id;")

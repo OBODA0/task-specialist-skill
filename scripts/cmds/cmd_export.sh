@@ -35,14 +35,14 @@ cmd_export() {
 
   # Default: Use raw sqlite3 output, format with awk to build Github markdown table
   local raw_data
-  raw_data=$(sqlite3 -batch "$DB" "SELECT id, IFNULL(project, '-'), status, priority, IFNULL(assignee, '-'), request_text FROM tasks $where ORDER BY priority DESC, created_at ASC;")
+  raw_data=$(sqlite3 -batch "$DB" "SELECT id, IFNULL(project, '-'), status, priority, IFNULL(assignee, '-'), IFNULL(due_date, '-'), IFNULL(tags, '-'), request_text FROM tasks $where ORDER BY priority DESC, created_at ASC;")
 
   if [ -z "$raw_data" ]; then
     echo "No tasks found to export."
     exit 0
   fi
 
-  echo "| ID | Project | Status | Priority | Assignee | Description |"
-  echo "|---|---|---|---|---|---|"
-  echo "$raw_data" | awk -F '|' '{ printf "| %s | %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5, $6 }'
+  echo "| ID | Project | Status | Priority | Assignee | Due | Tags | Description |"
+  echo "|---|---|---|---|---|---|---|---|"
+  echo "$raw_data" | awk -F '|' '{ printf "| %s | %s | %s | %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5, $6, $7, $8 }'
 }

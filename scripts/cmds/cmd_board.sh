@@ -5,7 +5,7 @@
 
 cmd_board() {
   local data
-  data=$(sqlite3 -separator '|' "$DB" "SELECT status, id, request_text, IFNULL(assignee, '') FROM tasks WHERE status IN ('pending', 'in_progress', 'done', 'blocked') ORDER BY id ASC;")
+  data=$(sqlite3 -separator '|' "$DB" "SELECT status, id, request_text, IFNULL(assignee, ''), IFNULL(due_date, ''), IFNULL(tags, '') FROM tasks WHERE status IN ('pending', 'in_progress', 'done', 'blocked') ORDER BY id ASC;")
   
   printf "\n"
   printf " %b%-29s%b| %b%-29s%b| %b%-29s%b| %b%-29s%b\n" "\033[1;33m" "PENDING" "\033[0m" "\033[1;36m" "IN PROGRESS" "\033[0m" "\033[1;32m" "DONE" "\033[0m" "\033[1;31m" "BLOCKED" "\033[0m"
@@ -28,9 +28,17 @@ cmd_board() {
       id = $2
       text = $3
       assignee = $4
+      due = $5
+      tags = $6
 
       if (assignee != "") {
         text = text " (@" assignee ")"
+      }
+      if (due != "") {
+        text = text " (Due: " due ")"
+      }
+      if (tags != "") {
+        text = text " (" tags ")"
       }
 
       if (length(text) > 23) {

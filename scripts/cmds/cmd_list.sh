@@ -1,11 +1,12 @@
 cmd_list() {
-  local filter_status="" filter_parent="" filter_project="" format_chat=0
+  local filter_status="" filter_parent="" filter_project="" format_chat=0 filter_tag=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
       --status=*)  filter_status="${1#*=}" ;;
       --parent=*)  filter_parent="${1#*=}" ;;
       --project=*) filter_project="${1#*=}" ;;
+      --tag=*)     filter_tag="${1#*=}" ;;
       --format=chat) format_chat=1 ;;
       -*)          die "Unknown flag: $1" ;;
     esac
@@ -32,6 +33,12 @@ cmd_list() {
     safe_proj=$(printf '%s' "$filter_project" | sed "s/'/''/g")
     where="$where AND project = '$safe_proj'"
   fi
+  
+  if [ -n "$filter_tag" ]; then
+    local safe_tag
+    safe_tag=$(printf '%s' "$filter_tag" | sed "s/'/''/g")
+    where="$where AND (tags LIKE '%$safe_tag%' OR tags = '$safe_tag')"
+  fi
 
   if [ "$format_chat" -eq 1 ]; then
     # Bypass ASCII tables and construct pure GitHub Markdown
@@ -45,10 +52,12 @@ cmd_list() {
       '**#' || id || ': ' || request_text || '** ' ||
       '(Priority: ' || priority || ')' ||
       CASE WHEN project IS NOT NULL THEN ' [' || project || ']' ELSE '' END ||
-      CASE WHEN assignee IS NOT NULL THEN ' (@' || assignee || ')' ELSE '' END
+      CASE WHEN assignee IS NOT NULL THEN ' (@' || assignee || ')' ELSE '' END ||
+      CASE WHEN due_date IS NOT NULL THEN ' (Due: ' || due_date || ')' ELSE '' END ||
+      CASE WHEN tags IS NOT NULL THEN ' (Tags: ' || tags || ')' ELSE '' END
     FROM tasks
     $where
-    ORDER BY status = 'done', priority DESC, created_at ASC;
+    ORDER BY status = 'done', due_date IS NULL ASC, due_date ASC, priority DESC, created_at ASC;
     ")
     
     if [ -z "$list_data" ]; then
@@ -72,11 +81,13 @@ cmd_list() {
     status,
     priority,
     IFNULL(project, '-') AS project,
-    IFNULL(assignee, '-') AS assignee
+    IFNULL(assignee, '-') AS assignee,
+    IFNULL(due_date, '-') AS due_date,
+    IFNULL(tags, '-') AS tags
   FROM tasks
   $where
-  ORDER BY status = 'done', priority DESC, created_at ASC;
+  ORDER BY status = 'done', due_date IS NULL ASC, due_date ASC, priority DESC, created_at ASC;
   "
 
-  sql_table "4 54 12 8 15 15" "$q"
+  sql_table "4 42 12 8 13 13 10 15" "$q"
 }

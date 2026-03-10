@@ -1,5 +1,5 @@
 cmd_create() {
-  local desc="" priority="" parent="" project="" verify=""
+  local desc="" priority="" parent="" project="" verify="" due_date="" tags=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -7,13 +7,15 @@ cmd_create() {
       --parent=*)   parent="${1#*=}" ;;
       --project=*)  project="${1#*=}" ;;
       --verify=*)   verify="${1#*=}" ;;
+      --due=*)      due_date="${1#*=}" ;;
+      --tags=*)     tags="${1#*=}" ;;
       -*)           die "Unknown flag: $1" ;;
       *)            desc="$1" ;;
     esac
     shift
   done
 
-  [ -z "$desc" ] && die "Usage: task create \"description\" [--priority=N] [--parent=ID] [--project=NAME] [--verify=\"cmd\"]"
+  [ -z "$desc" ] && die "Usage: task create \"description\" [--priority=N] [--parent=ID] [--project=NAME] [--verify=\"cmd\"] [--due=\"YYYY-MM-DD\"] [--tags=\"a,b\"]"
 
   if [ -n "$parent" ]; then
     require_int "$parent" "--parent"
@@ -47,12 +49,21 @@ cmd_create() {
 
   local verify_val="NULL"
   [ -n "$verify" ] && verify_val="'$(printf '%s' "$verify" | sed "s/'/''/g")'"
+  
+  local due_val="NULL"
+  if [ -n "$due_date" ]; then
+    [[ "$due_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "--due must be in YYYY-MM-DD format"
+    due_val="'$(printf '%s' "$due_date" | sed "s/'/''/g")'"
+  fi
+  
+  local tags_val="NULL"
+  [ -n "$tags" ] && tags_val="'$(printf '%s' "$tags" | sed "s/'/''/g")'"
 
   local task_id
-  task_id=$(sql "INSERT INTO tasks (request_text, project, status, priority, parent_id, verification_cmd, created_at, last_updated)
-    VALUES ('$safe_desc', $project_val, 'pending', $priority, $parent_val, $verify_val, datetime('now'), datetime('now'));
+  task_id=$(sql "INSERT INTO tasks (request_text, project, status, priority, parent_id, verification_cmd, due_date, tags, created_at, last_updated)
+    VALUES ('$safe_desc', $project_val, 'pending', $priority, $parent_val, $verify_val, $due_val, $tags_val, datetime('now'), datetime('now'));
     SELECT last_insert_rowid();")
 
-  ok "Created task #$task_id: $desc (priority=$priority${project:+, project=$project})"
+  ok "Created task #$task_id: $desc (priority=$priority${project:+, project=$project}${due_date:+, due=$due_date}${tags:+, tags=$tags})"
   echo "$task_id"
 }
